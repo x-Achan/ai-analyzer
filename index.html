@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 智能简历分析系统</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #1a73e8; }
+        .section { margin-bottom: 25px; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; }
+        label { font-weight: bold; display: block; margin-bottom: 10px; }
+        input[type="file"], textarea { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        textarea { height: 100px; resize: vertical; }
+        button { background-color: #1a73e8; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 6px; cursor: pointer; width: 100%; transition: background 0.3s; }
+        button:hover { background-color: #1557b0; }
+        button:disabled { background-color: #a0c3ff; cursor: not-allowed; }
+        .result-box { background: #282c34; color: #abb2bf; padding: 15px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; font-family: monospace; display: none; }
+        .loading { text-align: center; color: #666; font-style: italic; display: none; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🚀 AI 智能简历分析系统</h1>
+
+    <div class="section">
+        <label>1. 上传候选人简历 (PDF 格式)</label>
+        <input type="file" id="resumeFile" accept=".pdf">
+        <button id="uploadBtn" onclick="processResume()">上传并让 AI 提取信息</button>
+        <div id="uploadLoading" class="loading">正在拼命解析并请求 AI... 约需 5-10 秒...</div>
+        <pre id="extractResult" class="result-box"></pre>
+    </div>
+
+    <div class="section">
+        <label>2. 输入招聘岗位需求 (JD)</label>
+        <textarea id="jobDescription" placeholder="例如：急招一名前端工程师。要求：精通 HTML/CSS/JS，有 Vue/React 经验，熟悉计算机网络基础..."></textarea>
+        <button id="matchBtn" onclick="matchResume()" disabled>AI 简历匹配评分</button>
+        <div id="matchLoading" class="loading">正在深度对比简历与岗位...</div>
+        <pre id="matchResult" class="result-box"></pre>
+    </div>
+</div>
+
+<script>
+    // 全局变量保存提取出的文本，用于后续匹配
+    let globalResumeText = ""; 
+    const API_BASE = "http://fastapi-kja0.fcv3.1848055138812143.cn-beijing.fc.devsapp.net"; // 本地后端地址
+
+    async function processResume() {
+        const fileInput = document.getElementById('resumeFile');
+        if (!fileInput.files[0]) { alert("请先选择一个 PDF 文件！"); return; }
+
+        const uploadBtn = document.getElementById('uploadBtn');
+        const loading = document.getElementById('uploadLoading');
+        const resultBox = document.getElementById('extractResult');
+        const matchBtn = document.getElementById('matchBtn');
+
+        uploadBtn.disabled = true;
+        loading.style.display = 'block';
+        resultBox.style.display = 'none';
+
+        try {
+            // 1. 上传 PDF 获取纯文本
+            let formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+            let uploadRes = await fetch(`${API_BASE}/api/resume/upload`, { method: "POST", body: formData });
+            let uploadData = await uploadRes.json();
+            
+            if (uploadData.status !== "success") throw new Error(uploadData.detail || "解析PDF失败");
+            globalResumeText = uploadData.extracted_text;
+
+            // 2. 将纯文本发给 AI 进行结构化提取
+            let extractRes = await fetch(`${API_BASE}/api/resume/extract`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: globalResumeText })
+            });
+            let extractData = await extractRes.json();
+
+            // 3. 展示结果并开放下一步的按钮
+            resultBox.innerText = JSON.stringify(extractData.data, null, 2);
+            resultBox.style.display = 'block';
+            matchBtn.disabled = false; // 提取成功后，允许点击匹配按钮
+
+        } catch (error) {
+            alert("发生错误：" + error.message);
+        } finally {
+            uploadBtn.disabled = false;
+            loading.style.display = 'none';
+        }
+    }
+
+    async function matchResume() {
+        const jd = document.getElementById('jobDescription').value;
+        if (!jd.trim()) { alert("请填写岗位需求！"); return; }
+
+        const matchBtn = document.getElementById('matchBtn');
+        const loading = document.getElementById('matchLoading');
+        const resultBox = document.getElementById('matchResult');
+
+        matchBtn.disabled = true;
+        loading.style.display = 'block';
+        resultBox.style.display = 'none';
+
+        try {
+            // 调用匹配接口
+            let res = await fetch(`${API_BASE}/api/resume/match`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ resume_info: globalResumeText, job_description: jd })
+            });
+            let data = await res.json();
+
+            // 展示结果
+            let cacheNotice = data.is_cached ? "⚡ [命中缓存] " : "";
+            resultBox.innerText = cacheNotice + JSON.stringify(data.data, null, 2);
+            resultBox.style.display = 'block';
+
+        } catch (error) {
+            alert("发生错误：" + error.message);
+        } finally {
+            matchBtn.disabled = false;
+            loading.style.display = 'none';
+        }
+    }
+</script>
+
+</body>
+</html>
