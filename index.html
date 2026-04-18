@@ -16,8 +16,21 @@
         button { background-color: #1a73e8; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 6px; cursor: pointer; width: 100%; transition: background 0.3s; }
         button:hover { background-color: #1557b0; }
         button:disabled { background-color: #a0c3ff; cursor: not-allowed; }
-        .result-box { background: #282c34; color: #abb2bf; padding: 15px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; font-family: monospace; display: none; }
         .loading { text-align: center; color: #666; font-style: italic; display: none; margin-top: 10px; }
+        
+        /* 优化：去掉了黑底白字的代码块样式，改为透明容器容纳卡片 */
+        .result-box { display: none; margin-top: 15px; }
+
+        /* 👑 颜值升级：新增的 UI 卡片样式 */
+        .dashboard-card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border-left: 5px solid #1a73e8; margin-top: 10px;}
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .info-item { background: #f8f9fa; padding: 12px; border-radius: 8px; }
+        .info-item span { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+        .info-item strong { color: #333; font-size: 15px; }
+        .tag { display: inline-block; background: #e8f0fe; color: #1a73e8; padding: 4px 10px; border-radius: 20px; font-size: 13px; margin: 0 5px 5px 0; }
+        .tag.missing { background: #fce8e6; color: #d93025; }
+        .score-circle { width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; color: white; margin: 0 auto 15px auto; }
+        .ai-reason { background: #f3f8fe; padding: 15px; border-radius: 8px; font-size: 14px; line-height: 1.6; color: #202124; border: 1px solid #d2e3fc; }
     </style>
 </head>
 <body>
@@ -30,7 +43,7 @@
         <input type="file" id="resumeFile" accept=".pdf">
         <button id="uploadBtn" onclick="processResume()">上传并让 AI 提取信息</button>
         <div id="uploadLoading" class="loading">正在拼命解析并请求 AI... 约需 5-10 秒...</div>
-        <pre id="extractResult" class="result-box"></pre>
+        <div id="extractResult" class="result-box"></div>
     </div>
 
     <div class="section">
@@ -38,14 +51,14 @@
         <textarea id="jobDescription" placeholder="例如：急招一名前端工程师。要求：精通 HTML/CSS/JS，有 Vue/React 经验，熟悉计算机网络基础..."></textarea>
         <button id="matchBtn" onclick="matchResume()" disabled>AI 简历匹配评分</button>
         <div id="matchLoading" class="loading">正在深度对比简历与岗位...</div>
-        <pre id="matchResult" class="result-box"></pre>
+        <div id="matchResult" class="result-box"></div>
     </div>
 </div>
 
 <script>
     // 全局变量保存提取出的文本，用于后续匹配
     let globalResumeText = ""; 
-    const API_BASE = "https://fastapi-kja0.fcv3.1848055138812143.cn-beijing.fc.devsapp.net"; // 本地后端地址
+    const API_BASE = "https://fastapi-kja0.fcv3.1848055138812143.cn-beijing.fc.devsapp.net"; 
 
     async function processResume() {
         const fileInput = document.getElementById('resumeFile');
@@ -78,8 +91,31 @@
             });
             let extractData = await extractRes.json();
 
-            // 3. 展示结果并开放下一步的按钮
-            resultBox.innerText = JSON.stringify(extractData.data, null, 2);
+            // 3. 👑 颜值升级：渲染候选人画像卡片 (增加容错处理)
+            let rawData = extractData.data || {};
+            let info = rawData.basic_info || {};
+            let bg = rawData.background || {};
+            let intent = rawData.job_intent || {}; // 兼容刚才后端的加分项 Prompt
+
+            let html = `
+                <div class="dashboard-card">
+                    <h3 style="margin-top:0; color:#1a73e8;">🧑‍💼 候选人画像</h3>
+                    <div class="info-grid">
+                        <div class="info-item"><span>姓名</span><strong>${info.name || '未知'}</strong></div>
+                        <div class="info-item"><span>电话</span><strong>${info.phone || '未提供'}</strong></div>
+                        <div class="info-item"><span>求职意向</span><strong>${intent.intent_role || '未提供'}</strong></div>
+                        <div class="info-item"><span>期望薪资</span><strong>${intent.expected_salary || '未提供'}</strong></div>
+                        <div class="info-item"><span>学历背景</span><strong>${bg.education || '未提供'}</strong></div>
+                        <div class="info-item"><span>工作年限</span><strong>${bg.work_years || '未提取到'}</strong></div>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <span style="font-size:14px; color:#666;">核心项目经历：</span><br>
+                        ${(bg.projects && bg.projects.length > 0) ? bg.projects.map(p => `<span class="tag">💼 ${p}</span>`).join('') : '<span style="font-size:13px; color:#999;">无明显项目经历</span>'}
+                    </div>
+                </div>
+            `;
+            
+            resultBox.innerHTML = html;
             resultBox.style.display = 'block';
             matchBtn.disabled = false; // 提取成功后，允许点击匹配按钮
 
@@ -112,9 +148,38 @@
             });
             let data = await res.json();
 
-            // 展示结果
-            let cacheNotice = data.is_cached ? "⚡ [命中缓存] " : "";
-            resultBox.innerText = cacheNotice + JSON.stringify(data.data, null, 2);
+            // 👑 颜值升级：渲染 AI 匹配评估报告卡片
+            let mData = data.data || {};
+            let score = mData.match_score || 0;
+            // 根据分数改变边框和圆圈颜色：绿(>=80) 黄(>=60) 红(<60)
+            let colorClass = score >= 80 ? '#34a853' : (score >= 60 ? '#fbbc04' : '#ea4335');
+            let cacheNotice = data.is_cached ? "<div style='text-align:center; color:#fbbc04; margin-bottom:10px; font-weight:bold;'>⚡ 本次计算命中 Serverless 内存缓存 (0延迟)</div>" : "";
+
+            let coreSkills = mData.core_skills_matched || [];
+            let missingSkills = mData.missing_skills || [];
+
+            let matchHtml = `
+                ${cacheNotice}
+                <div class="dashboard-card" style="border-left-color: ${colorClass}; text-align: center;">
+                    <h3 style="margin-top:0;">🎯 AI 匹配评估报告</h3>
+                    <div class="score-circle" style="background: ${colorClass}; box-shadow: 0 0 15px ${colorClass}40;">
+                        ${score}分
+                    </div>
+                    
+                    <div style="text-align: left; margin-top: 20px;">
+                        <p><strong>✅ 命中核心技能：</strong></p>
+                        <div>${coreSkills.length > 0 ? coreSkills.map(s => `<span class="tag">${s}</span>`).join('') : '<span style="font-size:13px; color:#999;">无明显匹配项</span>'}</div>
+                        
+                        <p style="margin-top: 15px;"><strong>⚠️ 缺失关键技能：</strong></p>
+                        <div>${missingSkills.length > 0 ? missingSkills.map(s => `<span class="tag missing">${s}</span>`).join('') : '<span style="font-size:13px; color:#999;">无明显缺失项</span>'}</div>
+                        
+                        <p style="margin-top: 15px;"><strong>🤖 AI 综合评价：</strong></p>
+                        <div class="ai-reason">${mData.reason || '无详细评价'}</div>
+                    </div>
+                </div>
+            `;
+            
+            resultBox.innerHTML = matchHtml;
             resultBox.style.display = 'block';
 
         } catch (error) {
